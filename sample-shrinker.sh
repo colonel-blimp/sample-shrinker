@@ -6,7 +6,8 @@
 
 set -euo pipefail
 
-usage_oneliner="Usage:  $0 [options] FILE|DIRECTORY ..."
+script_name="$(basename "$0")"
+usage_oneliner="Usage:  $script_name [options] FILE|DIRECTORY ..."
 
 usage() {
   cat >&2 <<EOM
@@ -33,17 +34,17 @@ Examples:
   (max bitdepth: $target_bitdepth, stereo unchanged, original files backed up
   to the same relative location under '$backup_dir'):
 
-        $0 sample_dir/
+        $script_name sample_dir/
 
 
   Convert samples to 8-bit, mono:
 
-        $0 -c1 -b8 sample_dir/
+        $script_name -c1 -b8 sample_dir/
 
 
   Auto-convert effectively mono stereo samples to mono (see -a and -A)
 
-        $0 -a sample_dir/
+        $script_name -a sample_dir/
 
 
 Originally created to reduce the stress of streaming multiple simultaneous
@@ -95,8 +96,11 @@ Originally created to reduce the stress of streaming multiple simultaneous
    Default: '$backup_dir'
 
 -l
-   List
-   Dry run that identifies all files based on how they would meet criteria
+   list
+   Dry run to identify all files based on how they would meet criteria
+
+-o LOG_FILE
+   Path for output log file (default: $log_file)
 
 -n
    Dry run
@@ -117,7 +121,7 @@ function .log () {
   local level="$1"
   shift
   if [[ $log_level -ge $level ]]; then
-    printf "%-8s %s\n" "[${log_levels[$level]}]" "$@" |& tee -a out.log
+    printf "%-8s %s\n" "[${log_levels[$level]}]" "$@" |& tee -a "$log_file"
   fi
 }
 function .fatal() { >&2 .log 0 "$@"; }
@@ -136,7 +140,7 @@ is_stereo_effectively_mono()
     return 1
   fi
 
-  local stereo_diff="$(sox "$input" -n remix 1,2i stats |& grep '^Pk lev dB' | awk '{print $NF}')"
+  local stereo_diff="$(sox -V1 "$input" -n remix 1,2i stats |& grep '^Pk lev dB' | awk '{print $NF}')"
 
   .debug "[is_stereo_effectively_mono] $stereo_diff dB diff (threshold: $automono_threshold dB)"
   if [[ $stereo_diff == '-inf' ]] || [ "$(echo "$stereo_diff < $automono_threshold" | bc)" -eq 1 ]  ; then
@@ -152,10 +156,12 @@ print_sample_summary()
   local change_summary="$2"
   local stereo_diff="$3"
   local sox_bit_depth="$4"
+  local changed=''
+  [[ $change_summary =~ '->' ]] && changed="  [CHANGE]"
   if [[ -z $stereo_diff ]]; then
-    printf "%s         %6s  %s\n" "$change_summary" "$sox_bit_depth" "$src"
+    printf "%s         %6s  %s\n" "$change_summary" "$sox_bit_depth" "$src$changed"
   else
-    printf "%s   %7s   %6s  %s\n" "$change_summary" "$stereo_diff" "$sox_bit_depth" "$src"
+    printf "%s   %7s   %6s  %s\n" "$change_summary" "$stereo_diff" "$sox_bit_depth" "$src$changed"
   fi
 }
 
@@ -174,6 +180,7 @@ convert()
 
   local channels="$(soxi -V1 -c "$src")"
   local bitdepth="$(soxi -V1 -b "$src")"
+  local encoding="$(soxi -V1 -e "$src")"
 
   local dst_args=()
   local src_args=()
@@ -199,12 +206,23 @@ convert()
         dst_args+=(--no-dither)
       fi
       if [[ $bitdepth -eq 32 ]]; then
-        src_args+=(-e floating-point)
+        # There's a problem that seems common in 32-bit .wav samples, where the .wav is technically malformed
+        # The error message is "play WARN wav: wave header missing extended part of fmt chunk"
+        if [[ "$encoding" == 'Signed Integer PCM' ]]; then
+          src_args+=(-e signed-integer)
+        elif [[ "$encoding" == 'Floating Point PCM' ]]; then
+          #src_args+=(-G)
+          src_args+=(-e floating-point)
+        else
+          .error "SKIP (don't know how to handle 32-bit encoding '$encoding'): $src"
+          return 0
+        fi
+
       fi
     # Raise below-minimum bitdepth samples to minimum bitdepth (8)
     elif (( bitdepth < target_bitdepth && bitdepth < 8 )); then
-      dst_args+=(--bits="$target_bitdepth")
-      change_summary="${bitdepth}->${target_bitdepth}+M"
+      dst_args+=(--bits=8)
+      change_summary="${bitdepth}->8+M"
     fi
   else
     change_summary="${bitdepth}      "
@@ -231,13 +249,13 @@ convert()
       ch_stat="$ch_stat     "
     fi
   else
-    ch_stat="mono      "
+    ch_stat="mono       "
   fi
   change_summary="$change_summary  ${ch_stat}"
 
 
   if [[ $action == list ]]; then
-    print_sample_summary "$src" "$change_summary" "$stereo_diff" "$sox_bit_depth"
+    print_sample_summary "$src" "$change_summary" "$stereo_diff" "$sox_bit_depth" |& tee -a "$log_file"
     return 0
   fi
 
@@ -260,14 +278,13 @@ convert()
    .debug  '[convert] .............................................................'
 
   if [[ "$dry_run" == yes ]]; then
-    echo -n '[DRY RUN] '
-    print_sample_summary "$src" "$change_summary" "$stereo_diff" "$sox_bit_depth"
+    echo "[DRY RUN] $(print_sample_summary "$src" "$change_summary" "$stereo_diff" "$sox_bit_depth")"  |& tee -a "$log_file"
     .notice "[convert] DRY RUN: sox ${src_args[*]} '$src' ${dst_args[*]} '$dst' ${post_args[*]}"
     return 0
   fi
 
   # Convert sample
-  print_sample_summary "$src" "$change_summary" "$stereo_diff" "$sox_bit_depth"
+  print_sample_summary "$src" "$change_summary" "$stereo_diff" "$sox_bit_depth" |& tee -a "$log_file"
   .notice "[convert] sox ${src_args[*]} '$src' ${dst_args[*]} '$dst' ${post_args[*]}"
 
   mkdir -p "$b_src_dir"
@@ -275,11 +292,11 @@ convert()
   if [[ ${src^^} == "${dst^^}" ]]; then
     .debug '[convert] src == dst'
     cp "$src" "$b_src_dir/"
-    sox "${src_args[@]}" "$src" "${dst_args[@]}" "$dst.$$.wav" "${post_args[@]}" |& tee -a out.log \
+    sox "${src_args[@]}" "$src" "${dst_args[@]}" "$dst.$$.wav" "${post_args[@]}" |& tee -a "$log_file" \
       && mv "$dst.$$.wav" "$dst"
   else
     .debug '[convert] src != dst'
-    sox -V5 "${src_args[@]}" "$src" "${dst_args[@]}" "$dst" "${post_args[@]}" |& tee -a out.log \
+    sox -V5 "${src_args[@]}" "$src" "${dst_args[@]}" "$dst" "${post_args[@]}" |& tee -a "$log_file" \
       && mv "$src" "$b_src_dir/"
   fi
 
@@ -292,12 +309,12 @@ convert()
     if [[ ${src^^} == "${dst^^}" ]]; then
       b_ext="new."
     fi
-    sox "${b_src_dir}/$b_src" -n spectrogram -o "${b_src_dir}/$b_src.png"
-    sox "$dst" -n spectrogram -o "${b_src_dir}/$b_dst.${b_ext}png"
-    ls -lrth "${b_src_dir}/${b_src}" "$dst"
-    soxi "${b_src_dir}/${b_src}" "$dst"
+    sox -V1 "${b_src_dir}/$b_src" -n spectrogram -o "${b_src_dir}/$b_src.png"
+    sox -V1 "$dst" -n spectrogram -o "${b_src_dir}/$b_dst.${b_ext}png"
+    .debug "$(ls -lrth "${b_src_dir}/${b_src}" "$dst")"
+    .notice "$(soxi "${b_src_dir}/${b_src}" "$dst" 2>&1)"
     printf 'xdg-open "%s"\n' "${b_src_dir}/$b_dst.${b_ext}png"
-    printf 'xdg-open "%s"\n' "${b_src_dir}/$b_src.png"
+    #printf 'xdg-open "%s"\n' "${b_src_dir}/$b_src.png"
   fi
 }
 
@@ -337,12 +354,13 @@ src_extension=wav
 backup_dir=_backup
 automono_threshold='-95.5'
 generate_spectrograms=no
+log_file="${script_name%%.*}.log"
 
 declare -A log_levels
 log_levels=([0]="FATAL" [1]="ERROR" [2]="WARNING" [3]="INFO" [4]="NOTICE" [5]="DEBUG" [6]="TRACE")
-log_level=3
+log_level=2
 
-while getopts 'b:c:x:paA:sd:lnvh' opt; do
+while getopts 'b:c:x:paA:sd:lo:nvh' opt; do
   case "${opt}" in
     b)
       if [ "$OPTARG" -ne 8 -a "$OPTARG" -ne 16 -a "$OPTARG" -ne 24 ]; then
@@ -356,8 +374,8 @@ while getopts 'b:c:x:paA:sd:lnvh' opt; do
     p) pre_normalize=yes ;;
     a) auto_mono=yes ;;
     A)
-      if [[ ! $OPTARG =~ ^[-+]?[0-9]+\.?[0-9]*$ ]]; then
-        .error "-A takes a floating point number (default: '$automono_threshold'); got invalid value: '$OPTARG'"
+      if [[ ! $OPTARG =~ ^-[0-9]+\.?[0-9]*$ ]]; then
+        .error "-A takes a negative floating point number (default: '$automono_threshold'); got invalid value: '$OPTARG'"
         exit 1
       fi
       auto_mono=yes
@@ -366,6 +384,7 @@ while getopts 'b:c:x:paA:sd:lnvh' opt; do
     s) generate_spectrograms=yes ;;
     d) backup_dir="${OPTARG}" ;;
     l) action=list ;;
+    o) log_file="${OPTARG}" ;;
     n) dry_run=yes ;;
     v)
       (( ++log_level ))
@@ -394,6 +413,12 @@ shift $((OPTIND-1))
 .debug "dry_run:             ${dry_run}"
 .debug "----------------------------------------------------------------------"
 
+
+if [[ $# -eq 0 ]]; then
+  usage
+  exit 1
+fi
+
 for arg in "$@"; do
   if [[ $arg =~ ^- ]] && [ ! -f "$arg" -a ! -d "$arg" ]; then
     cat >&2 <<EOM
@@ -409,7 +434,7 @@ EOM
   fi
 done
 
-echo > out.log
+echo > "$log_file"
 for file_or_dir in "$@"; do
   .debug "main: '$file_or_dir'"
   select_and_process_files "$file_or_dir"
