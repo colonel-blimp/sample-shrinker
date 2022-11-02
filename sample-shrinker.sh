@@ -54,11 +54,17 @@ Originally created to reduce the stress of streaming multiple simultaneous
     Original sample file extension, used when searching under a DIRECTORY
     Default: $src_extension
 
--b BITDEPTH
-    Target bitdepth of files (only decreases)
-    Will not force bitdepths to be higher than they already are
+-b BIT_DEPTH
+    Target bitdepth for audio (only decreases)
+    Downsamples only; does not affect audio files at or below this bit depth
     Valid values are '8' and '16'
     Default: $target_bitdepth
+
+-B MINIMUM_BIT_DEPTH
+    Minimum bitdepth of files (only increases)
+    Upsamples only; does not affect audio files at or above this bit depth
+    Valid values are '8' and '16'
+    Default: ${minimum_bit_depth:-(none)}
 
 -c CHANNELS
     Target number of output channels (only decreases)
@@ -221,8 +227,10 @@ convert()
       fi
     # Raise below-minimum bitdepth samples to minimum bitdepth (8)
     elif (( bitdepth < target_bitdepth && bitdepth < 8 )); then
-      dst_args+=(--bits=8)
-      change_summary="${bitdepth}->8+M"
+      if [[ -n $minimum_bit_depth ]]; then
+        dst_args+=(--bits="$minimum_bit_depth")
+        change_summary="${bitdepth}->$minimum_bit_depth+M"
+      fi
     fi
   else
     change_summary="${bitdepth}      "
@@ -353,6 +361,7 @@ pre_normalize=no
 src_extension=wav
 backup_dir=_backup
 automono_threshold='-95.5'
+minimum_bit_depth=
 generate_spectrograms=no
 log_file="${script_name%%.*}.log"
 
@@ -360,7 +369,7 @@ declare -A log_levels
 log_levels=([0]="FATAL" [1]="ERROR" [2]="WARNING" [3]="INFO" [4]="NOTICE" [5]="DEBUG" [6]="TRACE")
 log_level=2
 
-while getopts 'b:c:x:paA:sd:lo:nvh' opt; do
+while getopts 'b:B:c:x:paA:sd:lo:nvh' opt; do
   case "${opt}" in
     b)
       if [ "$OPTARG" -ne 8 -a "$OPTARG" -ne 16 -a "$OPTARG" -ne 24 ]; then
@@ -368,6 +377,13 @@ while getopts 'b:c:x:paA:sd:lo:nvh' opt; do
         exit 1
       fi
       target_bitdepth="${OPTARG}"
+      ;;
+    B)
+      if [ "$OPTARG" -ne 8 -a "$OPTARG" -ne 16 -a "$OPTARG" -ne 24 ]; then
+        .error "-B takes a bitdepth of either 8, 16, or 24; got invalid value: '$OPTARG'"
+        exit 1
+      fi
+      minimum_bit_depth="${OPTARG}"
       ;;
     c) target_channels="${OPTARG}" ;;
     x) src_extension="${OPTARG}" ;;
