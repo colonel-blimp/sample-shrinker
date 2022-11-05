@@ -7,7 +7,7 @@
 set -euo pipefail
 
 script_name="$(basename "$0")"
-usage_oneliner="Usage:  $script_name [options] FILE|DIRECTORY ..."
+usage_oneliner="Usage:  $script_name [options] DIRECTORY|FILE ..."
 
 usage() {
   cat >&2 <<EOM
@@ -15,36 +15,60 @@ $usage_oneliner
 
 Conditionally batch-convert audio samples into minimal .wav files
 
+Each DIRECTORY is recursively searched for audio files to process, based
+on their extension (.$src_extension by default, configure with -x).  Any FILE
+specified directly will be processed (regardless of its extension).
+
 If a sample does not already meet the target BITDEPTH or CHANNELS, it will be
 converted in place and the original will be backed up to a parallel directory
 structure (default: $backup_dir).
 
-Each DIRECTORY is recursively searched for audio files to process, based
-on their extension (.$src_extension by default, configure with -x EXT).
+Upon conversion, spectrogram .png files are generated alongside the backed-up
+original file to compare the original vs new audio files (disable with -S)
 
-Each FILE will be processed, regardless of its extension.
+You can review the characteristics of *all* sample files, and see if/why they
+would be converted by running with -l.  Preview only samples that would change
+with -n.
 
-- Only samples that don't already meet the target critera will be changed
-- Samples are only converted to a smaller target bitdepth/chanels (never higher)
-- Stereo samples can be conditionally converted to mono using -a (auto-mono)
+Caveats:
+
+- Samples are CONVERTED IN PLACE
+  - The original file is backed up under '$backup_dir/' (change with -d)
+  - Backups include spectrogram .pngs for old & new files (disable with -S)
+- Only samples that DON'T meet the target critera will be changed
+- Samples are only converted to SMALLER target bitdepth (-b) or chanels (-c)
+  - ...unless a minimum bitdepth is specified (-B, disabled by default)
+- Stereo samples can be conditionally converted to mono using auto-mono (-a)
+  - the threshold for automatice conversion is configurable (-A)
 
 Examples:
 
   Recursively convert samples under 'sample_dir/' using the default settings
   (max bitdepth: $target_bitdepth, stereo unchanged, original files backed up
-  to the same relative location under '$backup_dir'):
+  to the same relative location under '$backup_dir', with spectrogram .pngs
+  generated alongside the backups):
 
         $script_name sample_dir/
 
+  Also print the location to the new spectrogram file:
 
-  Convert samples to 8-bit, mono:
+        $script_name -v sample_dir/
+
+  Convert samples down to 8-bit, mono:
 
         $script_name -c1 -b8 sample_dir/
 
-
-  Auto-convert effectively mono stereo samples to mono (see -a and -A)
+  Auto-convert "effectively mono" stereo samples to mono (see -a and -A):
 
         $script_name -a sample_dir/
+
+  Auto-convert + auto-mono, with "efectively mono" = < -80 dB difference:
+
+        $script_name -A-80 sample_dir/
+
+  Print the location of spectrograms as they are generated:
+
+        $script_name -v sample_dir/
 
 
 Originally created to reduce the stress of streaming multiple simultaneous
@@ -80,7 +104,7 @@ Originally created to reduce the stress of streaming multiple simultaneous
     channels (one of which is phase-inverted) is below a threshold
     ($automono_threshold dB, configurable with -A)
 
--A DB
+-A DB_THRESHOLD
     Auto-mono threshold (implies -a)
     The (negative) Peak dB used to determine if a stereo sample is already
     "effectively mono" (See -a for details on auto-mono)
@@ -93,9 +117,9 @@ Originally created to reduce the stress of streaming multiple simultaneous
    of a level-balanced collection it will change its volume relative to the
    other samples
 
--s
-   Generate spectrogram .png files for the original and converted file at the
-   same relative location under the backup directory (see -d)
+-S
+   Skip generating spectrogram .png files
+   -d)
 
 -d BACKUP_DIR
    Directory to stoe backed up original sample files
@@ -123,6 +147,8 @@ Originally created to reduce the stress of streaming multiple simultaneous
 EOM
 }
 
+# Log-level functions
+# --------------------------------------
 function .log () {
   local level="$1"
   shift
@@ -137,6 +163,7 @@ function .info() { .log 3 "$@"; }
 function .notice() { .log 4 "$@"; }
 function .debug() { >&2 .log 5 "$@"; }
 function .trace() { >&2 .log 6 "$@"; }
+# --------------------------------------
 
 
 is_stereo_effectively_mono()
@@ -156,63 +183,45 @@ is_stereo_effectively_mono()
   return 1
 }
 
-print_sample_summary()
+
+# Summarize sample and any prospective changs in orderly columns
+one_line_sample_summary()
 {
   local src="$1"
   local change_summary="$2"
   local stereo_diff="$3"
   local sox_bit_depth="$4"
-  local changed=''
-  [[ $change_summary =~ '->' ]] && changed="  [CHANGE]"
   if [[ -z $stereo_diff ]]; then
-    printf "%s         %6s  %s\n" "$change_summary" "$sox_bit_depth" "$src$changed"
+    printf "%s         %6s" "$change_summary" "$sox_bit_depth"
   else
-    printf "%s   %7s   %6s  %s\n" "$change_summary" "$stereo_diff" "$sox_bit_depth" "$src$changed"
+    printf "%s   %7s   %6s" "$change_summary" "$stereo_diff" "$sox_bit_depth"
   fi
 }
 
-convert()
+
+# Determine what do to about bitrate
+# - updates $change_summary with a text summary
+# - updates $*_args with sox args
+prep_bitdepth_convert()
 {
-  local src="$1"
-  .notice ''
-  .notice " $src"
-  .notice '-----------------------------------------------------------------------'
-
-  local b_src_dir="$backup_dir/$(dirname "$src")"
-  local b_src="$(basename "$src")"
-  local orig_ext="${src##*.}"
-  local b_dst="${b_src%.${orig_ext}}".wav
-  local dst="${src%.${orig_ext}}".wav
-
-  local channels="$(soxi -V1 -c "$src")"
-  local bitdepth="$(soxi -V1 -b "$src")"
-  local encoding="$(soxi -V1 -e "$src")"
-
-  local dst_args=()
-  local src_args=()
-  local post_args=()
-  local change_summary=""
-
   # Prepare bitdepth conversion
   if [[ $bitdepth -ne $target_bitdepth ]]; then
     change_summary="${bitdepth}       "
     if [[ $bitdepth -gt $target_bitdepth ]]; then
-      # =-0.1 acts as a guard volume for normalize
       change_summary="${bitdepth}->${target_bitdepth}"
       if [[ ${pre_normalize:-no} == yes ]]; then
-        src_args+=(--norm=-0.1)
+        src_args+=(--norm=-0.1)  # =-0.1 acts as a guard volume for normalize
         change_summary="$change_summary+p"
       else
         change_summary="$change_summary  "
       fi
       dst_args+=(--bits="$target_bitdepth")
 
-      # sox's dither down to 8bit always sounds terrible, so turn it off
-      if [[ $target_bitdepth -eq 8 ]]; then
-        dst_args+=(--no-dither)
-      fi
+      # sox's dither down to 8-bit always sounds terrible
+      [[ $target_bitdepth -eq 8 ]] && dst_args+=(--no-dither)
+
       if [[ $bitdepth -eq 32 ]]; then
-        # There's a problem that seems common in 32-bit .wav samples, where the .wav is technically malformed
+        # There's a common problem in 32-bit .wav samples, where the .wav is technically malformed
         # The error message is "play WARN wav: wave header missing extended part of fmt chunk"
         if [[ "$encoding" == 'Signed Integer PCM' ]]; then
           src_args+=(-e signed-integer)
@@ -223,30 +232,38 @@ convert()
           .error "SKIP (don't know how to handle 32-bit encoding '$encoding'): $src"
           return 0
         fi
-
       fi
-    # Raise below-minimum bitdepth samples to minimum bitdepth (8)
+
+    # Raise below-minimum bitdepth samples to minimum bitdepth (default: 8)
     elif (( bitdepth < target_bitdepth && bitdepth < 8 )); then
       if [[ -n $minimum_bit_depth ]]; then
         dst_args+=(--bits="$minimum_bit_depth")
+
+        # sox's dither down to 8-bit always sounds terrible
+        [[ $minimum_bit_depth -eq 8 ]] && dst_args+=(--no-dither)
+
         change_summary="${bitdepth}->$minimum_bit_depth+M"
       fi
     fi
   else
     change_summary="${bitdepth}      "
   fi
+}
 
+
+prep_mono_convert()
+{
   # Prepare channel conversion
   #   Intended for stereo -> mono, but should handle any number of channels
   #   (Not sure that's useful)
-  local ch_stat="${channels}ch"
   local stereo_diff=""
-  local sox_bit_depth="$(sox -V1 "$input" -n stats |& grep '^Bit-depth' | awk '{print $NF}')"
+  local sox_bit_depth="$(sox -V1 "$src" -n stats |& grep '^Bit-depth' | awk '{print $NF}')"
+  local ch_stat="${channels}ch"
   if [[ $channels -gt 1 ]]; then
-    stereo_diff="$(sox -V1 "$input" -n remix 1,2i stats |& grep '^Pk lev dB' | awk '{print $NF}')"
+    stereo_diff="$(sox -V1 "$src" -n remix 1,2i stats |& grep '^Pk lev dB' | awk '{print $NF}')"
     [[ $channels -eq 2 ]] && ch_stat="st"
-    if [[ $auto_mono == 'yes' ]] && is_stereo_effectively_mono "$input"; then
-      .notice "|auto-mono| Converting to mono: $input"
+    if [[ $auto_mono == 'yes' ]] && is_stereo_effectively_mono "$src"; then
+      .notice "|auto-mono| Converting to mono: $src"
       post_args+=(remix "1-$channels")
       ch_stat="$ch_stat->m+A"
     elif [[ $channels > $target_channels  ]]; then
@@ -259,69 +276,123 @@ convert()
   else
     ch_stat="mono       "
   fi
-  change_summary="$change_summary  ${ch_stat}"
+  change_summary="$(one_line_sample_summary "$src" "$change_summary  ${ch_stat}" "$stereo_diff" "$sox_bit_depth")"
+}
 
 
+convert()
+{
+  local src="$1"
+
+  .notice ''
+  .notice " $src"
+  .notice '-----------------------------------------------------------------------'
+
+  local channels="$(soxi -V1 -c "$src")"
+  local bitdepth="$(soxi -V1 -b "$src")"
+  local encoding="$(soxi -V1 -e "$src")"
+
+  local change_summary=""
+  local dst_args=()
+  local src_args=()
+  local post_args=()
+
+  # ----------------------
+  # These functions access the (dynamically-scopped) variables above like globals
+  # and build up the contents of $change_summary and $*_args
+  # They used to live here, but it's already a sprawl
+  prep_bitdepth_convert
+  prep_mono_convert
+  # ----------------------
+
+  local change_status='[CHANGED]'
+  { [[ $action == list ]] || [[ $dry_run == yes ]]; } && change_status='[CHANGE]'
+
+  change_summary="$change_summary  ${src@Q}"
+  [[ ! ${src,,} =~ .wav$ ]] && change_summary="${change_summary}->.wav"
+  [[ $change_summary =~ '->' ]] && change_summary="$change_summary  $change_status"
+
+  # list reports ALL files (but doesn't log them)
   if [[ $action == list ]]; then
-    print_sample_summary "$src" "$change_summary" "$stereo_diff" "$sox_bit_depth" |& tee -a "$log_file"
+    echo "$change_summary"
     return 0
   fi
 
-  # Don't convert sample if changes aren't required
+  .debug  '[convert] .............................................................'
+  .debug  "[convert] bitdepth: $bitdepth  (target: $target_bitdepth)"
+  .debug  "[convert] channels: $channels   (target: $target_channels)"
+
+  # Skip conversion if no changes are required
   if [[ ${src,,} =~ .wav$ ]] && [[ "${#dst_args[@]}" == 0 ]] && [[ "${#src_args[@]}" == 0 ]] && [[ "${#post_args[@]}" == 0 ]]; then
-     .debug  '[convert] .............................................................'
-     .debug  "[convert] bitdepth: $bitdepth  (target: $target_bitdepth)"
-     .debug  "[convert] channels: $channels   (target: $target_channels)"
      .debug  '[convert] .............................................................'
      .notice "[convert] SKIP (nothing to change):  $src "
      return 0
   fi
 
-   .debug  '[convert] .............................................................'
-   .debug  "[convert] bitdepth: $bitdepth  (target: $target_bitdepth)"
-   .debug  "[convert] channels: $channels   (target: $target_channels)"
-   .debug  "[convert] dst_args (${#dst_args[@]}): '${dst_args[*]}'"
-   .debug  "[convert] src_args: '${src_args[*]}'"
-   .debug  "[convert] post_args: '${post_args[*]}'"
-   .debug  '[convert] .............................................................'
+  .debug  "[convert] dst_args:  '${#dst_args[@]}'"
+  .debug  "[convert] src_args:  '${src_args[*]}'"
+  .debug  "[convert] post_args: '${post_args[*]}'"
+  .debug  '[convert] .............................................................'
+
+  local dst="${src%.*}".wav
+  local tmp_dst=
+  local sox_args=("${src_args[@]}" "$src" "${dst_args[@]}" "$dst" "${post_args[@]}")
+
+  # (SD card is case insensitive)
+  [[ ${src^^} == "${dst^^}" ]] && tmp_dst="${src%.*}.$$".wav
+
+  sox_args=("${src_args[@]}" "$src" "${dst_args[@]}" "${tmp_dst:-$dst}" "${post_args[@]}")
+
+  local flat_parent_dir="$( cd -- "$(dirname "$src")" >/dev/null 2>&1 ; pwd -P )"
+  local b_src_dir="$backup_dir/${flat_parent_dir#$PWD/}"
 
   if [[ "$dry_run" == yes ]]; then
-    echo "[DRY RUN] $(print_sample_summary "$src" "$change_summary" "$stereo_diff" "$sox_bit_depth")"  |& tee -a "$log_file"
-    .notice "[convert] DRY RUN: sox ${src_args[*]} '$src' ${dst_args[*]} '$dst' ${post_args[*]}"
+    echo "[DRY RUN] $change_summary" |& tee -a "$log_file"
+    .notice "[convert] DRY RUN: sox  $(printf "%q " "${sox_args[@]}")"
+  else
+    # Convert sample
+    echo "$change_summary" |& tee -a "$log_file"
+    .notice "[convert] sox $(printf "%q " "${sox_args[@]}")"
+
+    mkdir -p "$b_src_dir"
+
+    if [[ -n "$tmp_dst" ]]; then
+      .notice "[convert] ( using tmp_dst: '$tmp_dst' )"
+      cp "$src" "$b_src_dir/"
+      sox "${sox_args[@]}" |& tee -a "$log_file" && mv "$tmp_dst" "$dst"
+    else
+      sox -V5 "${sox_args[@]}" |& tee -a "$log_file" && mv "$src" "$b_src_dir/"
+    fi
+  fi
+
+
+
+  local b_src="$(basename "$src")"
+  local sg_dst="${b_src%.*}".wav  # FIXME how did this work?
+  local sg_old_png="${b_src_dir}/$b_src.old.png"
+  local sg_new_png="${b_src_dir}/$sg_dst.new.png"
+
+  .debug "[backup] b_src_dir = '$b_src_dir'"
+  .debug "[backup] b_src = '$b_src'"
+  .debug "[backup] src = '$src'"
+  .debug "[backup] dst = '$dst'"
+  .debug "[backup] sg_dst = '$sg_dst'"
+
+  if [[ "$dry_run" == yes ]]; then
+    .debug -- sox -V1 "${b_src_dir}/$b_src" -n spectrogram -o "$sg_old_png"
+    .debug -- sox -V1 "$dst" -n spectrogram -o "$sg_new_png"
     return 0
   fi
 
-  # Convert sample
-  print_sample_summary "$src" "$change_summary" "$stereo_diff" "$sox_bit_depth" |& tee -a "$log_file"
-  .notice "[convert] sox ${src_args[*]} '$src' ${dst_args[*]} '$dst' ${post_args[*]}"
-
-  mkdir -p "$b_src_dir"
-  # SD card is case insensitive, so compare both paths as uppercase
-  if [[ ${src^^} == "${dst^^}" ]]; then
-    .debug '[convert] src == dst'
-    cp "$src" "$b_src_dir/"
-    sox "${src_args[@]}" "$src" "${dst_args[@]}" "$dst.$$.wav" "${post_args[@]}" |& tee -a "$log_file" \
-      && mv "$dst.$$.wav" "$dst"
-  else
-    .debug '[convert] src != dst'
-    sox -V5 "${src_args[@]}" "$src" "${dst_args[@]}" "$dst" "${post_args[@]}" |& tee -a "$log_file" \
-      && mv "$src" "$b_src_dir/"
-  fi
-
-  .debug "[backup] b_src_dir = '$b_src_dir'"
-  .debug "[backup] src = '$src'"
-  .debug "[backup] dst = '$dst'"
-
   if [[ $generate_spectrograms == yes ]]; then
-    local b_ext=''
-    if [[ ${src^^} == "${dst^^}" ]]; then
-      b_ext="new."
-    fi
-    sox -V1 "${b_src_dir}/$b_src" -n spectrogram -o "${b_src_dir}/$b_src.png"
-    sox -V1 "$dst" -n spectrogram -o "${b_src_dir}/$b_dst.${b_ext}png"
+
+    sox -V1 "${b_src_dir}/$b_src" -n spectrogram -o "$sg_old_png"
+    sox -V1 "$dst" -n spectrogram -o "$sg_new_png"
+
     .debug "$(ls -lrth "${b_src_dir}/${b_src}" "$dst")"
     .notice "$(soxi "${b_src_dir}/${b_src}" "$dst" 2>&1)"
-    printf 'xdg-open "%s"\n' "${b_src_dir}/$b_dst.${b_ext}png"
+
+    .info "$(printf 'xdg-open "%s"\n' "$sg_new_png")"
     #printf 'xdg-open "%s"\n' "${b_src_dir}/$b_src.png"
   fi
 }
@@ -362,14 +433,14 @@ src_extension=wav
 backup_dir=_backup
 automono_threshold='-95.5'
 minimum_bit_depth=
-generate_spectrograms=no
-log_file="${script_name%%.*}.log"
+generate_spectrograms=yes
+log_file="_${script_name%%.*}.log"
 
 declare -A log_levels
 log_levels=([0]="FATAL" [1]="ERROR" [2]="WARNING" [3]="INFO" [4]="NOTICE" [5]="DEBUG" [6]="TRACE")
 log_level=2
 
-while getopts 'b:B:c:x:paA:sd:lo:nvh' opt; do
+while getopts 'b:B:c:x:paA:Sd:lo:nvh' opt; do
   case "${opt}" in
     b)
       if [ "$OPTARG" -ne 8 -a "$OPTARG" -ne 16 -a "$OPTARG" -ne 24 ]; then
@@ -397,7 +468,7 @@ while getopts 'b:B:c:x:paA:sd:lo:nvh' opt; do
       auto_mono=yes
       automono_threshold="${OPTARG}"
       ;;
-    s) generate_spectrograms=yes ;;
+    S) generate_spectrograms=no ;;
     d) backup_dir="${OPTARG}" ;;
     l) action=list ;;
     o) log_file="${OPTARG}" ;;
@@ -450,7 +521,7 @@ EOM
   fi
 done
 
-echo > "$log_file"
+[[ $action != list ]] && echo > "$log_file"
 for file_or_dir in "$@"; do
   .debug "main: '$file_or_dir'"
   select_and_process_files "$file_or_dir"
