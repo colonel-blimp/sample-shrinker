@@ -19,7 +19,7 @@ Each DIRECTORY is recursively searched for audio files to process, based
 on their extension (.$src_extension by default, configure with -x).  Any FILE
 specified directly will be processed (regardless of its extension).
 
-If a sample does not already meet the target BITDEPTH or CHANNELS, it will be
+If a sample does not already meet the target BIT_DEPTH or CHANNELS, it will be
 converted in place and the original will be backed up to a parallel directory
 structure (default: $backup_dir).
 
@@ -36,15 +36,15 @@ Caveats:
   - The original file is backed up under '$backup_dir/' (change with -d)
   - Backups include spectrogram .pngs for old & new files (disable with -S)
 - Only samples that DON'T meet the target critera will be changed
-- Samples are only converted to SMALLER target bitdepth (-b) or chanels (-c)
-  - ...unless a minimum bitdepth is specified (-B, disabled by default)
+- Samples are only converted to SMALLER target bit-depth (-b) or channels (-c)
+  - ...unless a minimum bit-depth is specified (-B, disabled by default)
 - Stereo samples can be conditionally converted to mono using auto-mono (-a)
-  - the threshold for automatice conversion is configurable (-A)
+  - the threshold for automatic conversion is configurable (-A)
 
 Examples:
 
   Recursively convert samples under 'sample_dir/' using the default settings
-  (max bitdepth: $target_bitdepth, stereo unchanged, original files backed up
+  (max bit-depth: $target_bitdepth, stereo unchanged, original files backed up
   to the same relative location under '$backup_dir', with spectrogram .pngs
   generated alongside the backups):
 
@@ -79,13 +79,13 @@ Originally created to reduce the stress of streaming multiple simultaneous
     Default: $src_extension
 
 -b BIT_DEPTH
-    Target bitdepth for audio (only decreases)
+    Target bit-depth for audio (only decreases)
     Downsamples only; does not affect audio files at or below this bit depth
     Valid values are '8' and '16'
     Default: $target_bitdepth
 
 -B MINIMUM_BIT_DEPTH
-    Minimum bitdepth of files (only increases)
+    Minimum bit-depth of files (only increases)
     Upsamples only; does not affect audio files at or above this bit depth
     Valid values are '8' and '16'
     Default: ${minimum_bit_depth:-(none)}
@@ -111,7 +111,7 @@ Originally created to reduce the stress of streaming multiple simultaneous
     Default: ${automono_threshold}
 
 -p
-   Pre-normalize sample before down-converting bitdepth.
+   Pre-normalize sample before down-converting bit-depth.
 
    This preserves as much dynamic range as possible - but if the sample is part
    of a level-balanced collection it will change its volume relative to the
@@ -204,7 +204,7 @@ one_line_sample_summary()
 # - updates $*_args with sox args
 prep_bitdepth_convert()
 {
-  # Prepare bitdepth conversion
+  # Prepare bit-depth conversion
   if [[ $bitdepth -ne $target_bitdepth ]]; then
     change_summary="${bitdepth}       "
     if [[ $bitdepth -gt $target_bitdepth ]]; then
@@ -234,7 +234,7 @@ prep_bitdepth_convert()
         fi
       fi
 
-    # Raise below-minimum bitdepth samples to minimum bitdepth (default: 8)
+    # Raise below-minimum bit-depth samples to minimum bit-depth (default: 8)
     elif (( bitdepth < target_bitdepth && bitdepth < 8 )); then
       if [[ -n $minimum_bit_depth ]]; then
         dst_args+=(--bits="$minimum_bit_depth")
@@ -319,7 +319,7 @@ convert()
   fi
 
   .debug  '[convert] .............................................................'
-  .debug  "[convert] bitdepth: $bitdepth  (target: $target_bitdepth)"
+  .debug  "[convert] bit-depth: $bitdepth  (target: $target_bitdepth)"
   .debug  "[convert] channels: $channels   (target: $target_channels)"
 
   # Skip conversion if no changes are required
@@ -444,14 +444,14 @@ while getopts 'b:B:c:x:paA:Sd:lo:nvh' opt; do
   case "${opt}" in
     b)
       if [ "$OPTARG" -ne 8 -a "$OPTARG" -ne 16 -a "$OPTARG" -ne 24 ]; then
-        .error "-b takes a bitdepth of either 8, 16, or 24; got invalid value: '$OPTARG'"
+        .error "-b takes a bit-depth of either 8, 16, or 24; got invalid value: '$OPTARG'"
         exit 1
       fi
       target_bitdepth="${OPTARG}"
       ;;
     B)
       if [ "$OPTARG" -ne 8 -a "$OPTARG" -ne 16 -a "$OPTARG" -ne 24 ]; then
-        .error "-B takes a bitdepth of either 8, 16, or 24; got invalid value: '$OPTARG'"
+        .error "-B takes a bit-depth of either 8, 16, or 24; got invalid value: '$OPTARG'"
         exit 1
       fi
       minimum_bit_depth="${OPTARG}"
