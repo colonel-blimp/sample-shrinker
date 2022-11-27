@@ -352,6 +352,7 @@ convert()
 
   .debug  '[convert] .............................................................'
   .debug  "[convert] bit-depth: $bitdepth  (target: $target_bitdepth)"
+  .debug  "[convert] samplerate: $samplerate  (target: $target_samplerate)"
   .debug  "[convert] channels: $channels   (target: $target_channels)"
 
   # Skip conversion if no changes are required
@@ -540,6 +541,7 @@ shift $((OPTIND-1))
 .debug "src_extension:       ${src_extension}"
 .debug "target_channels:     ${target_channels}"
 .debug "target_bitdepth:     ${target_bitdepth}"
+.debug "target_samplerate:   ${target_samplerate}"
 .debug "auto_mono:           ${auto_mono}"
 .debug "automono_threshold:  ${automono_threshold} dB"
 .debug "pre_normalize:       ${pre_normalize}"
