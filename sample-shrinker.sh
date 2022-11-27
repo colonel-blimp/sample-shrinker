@@ -90,6 +90,10 @@ Originally created to reduce the stress of streaming multiple simultaneous
     Valid values are '8' and '16'
     Default: ${minimum_bit_depth:-(none)}
 
+-s SAMPLERATE
+    Sets the samplerate of the output files
+    Default: $target_samplerate
+
 -c CHANNELS
     Target number of output channels (only decreases)
     Valid values are: 1 (mono) or 2 (stereo)
@@ -434,6 +438,7 @@ src_extension=wav
 backup_dir=_backup
 automono_threshold='-95.5'
 minimum_bit_depth=
+minimum_samplerate=
 generate_spectrograms=yes
 log_file="_${script_name%%.*}.log"
 
@@ -441,7 +446,7 @@ declare -A log_levels
 log_levels=([0]="FATAL" [1]="ERROR" [2]="WARNING" [3]="INFO" [4]="NOTICE" [5]="DEBUG" [6]="TRACE")
 log_level=2
 
-while getopts 'b:B:s:c:x:paA:Sd:lo:nvh' opt; do
+while getopts 'b:B:r:R:c:x:paA:Sd:lo:nvh' opt; do
   case "${opt}" in
     b)
       if [ "$OPTARG" -ne 8 -a "$OPTARG" -ne 16 -a "$OPTARG" -ne 24 ]; then
@@ -457,12 +462,19 @@ while getopts 'b:B:s:c:x:paA:Sd:lo:nvh' opt; do
       fi
       minimum_bit_depth="${OPTARG}"
       ;;
-    s)
+    r)
       if [ "$OPTARG" -ne 44100 ]; then
-        .error "-s is only 44100 for testing; got invalid value: '$OPTARG'"
+        .error "-r must be 44100 for testing; got invalid value: '$OPTARG'"
         exit 1
       fi
       target_samplerate="${OPTARG}"
+      ;;
+    R)
+      if [ "$OPTARG" -ne 44100 ]; then
+        .error "-R must be 44100 for testing; got invalid value: '$OPTARG'"
+        exit 1
+      fi
+      minimum_bit_depth="${OPTARG}"
       ;;
     c) target_channels="${OPTARG}" ;;
     x) src_extension="${OPTARG}" ;;
