@@ -491,15 +491,15 @@ while getopts 'b:B:r:R:c:x:paA:Sd:lo:nvh' opt; do
       minimum_bit_depth="${OPTARG}"
       ;;
     r)
-      if [ "$OPTARG" -ne 44100 ]; then
-        .error "-r must be 44100 for testing; got invalid value: '$OPTARG'"
+      if ! [[ "$OPTARG" =~ ^[0-9]+$ ]]; then
+        .error "-r must be an integer; got invalid value: '$OPTARG'"
         exit 1
       fi
       target_samplerate="${OPTARG}"
       ;;
     R)
-      if [ "$OPTARG" -ne 44100 ]; then
-        .error "-R must be 44100 for testing; got invalid value: '$OPTARG'"
+      if ! [[ "$OPTARG" =~ ^[0-9]+$ ]]; then
+        .error "-R must be an integer; got invalid value: '$OPTARG'"
         exit 1
       fi
       minimum_samplerate="${OPTARG}"
