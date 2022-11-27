@@ -474,7 +474,7 @@ while getopts 'b:B:r:R:c:x:paA:Sd:lo:nvh' opt; do
         .error "-R must be 44100 for testing; got invalid value: '$OPTARG'"
         exit 1
       fi
-      minimum_bit_depth="${OPTARG}"
+      minimum_samplerate="${OPTARG}"
       ;;
     c) target_channels="${OPTARG}" ;;
     x) src_extension="${OPTARG}" ;;
