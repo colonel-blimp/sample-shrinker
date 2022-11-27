@@ -267,8 +267,8 @@ prep_samplerate_convert()
       change_summary=$change_summary"${samplerate}->${target_samplerate}"
       dst_args+=(--rate="$target_samplerate")
 
-    # Raise below-minimum samplerate samples to minimum samplerate (default: 44100)
-    elif (( samplerate < target_samplerate && samplerate < 44100 )); then
+    # Raise below-minimum samplerate samples to minimum samplerate (default: 11025)
+    elif (( samplerate < target_samplerate && samplerate < 11025 )); then
       if [[ -n $minimum_samplerate ]]; then
         dst_args+=(--rate="$minimum_samplerate")
 
