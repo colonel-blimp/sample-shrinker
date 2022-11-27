@@ -35,7 +35,7 @@ Caveats:
 - Samples are CONVERTED IN PLACE
   - The original file is backed up under '$backup_dir/' (change with -d)
   - Backups include spectrogram .pngs for old & new files (disable with -S)
-- Only samples that DON'T meet the target critera will be changed
+- Only samples that DONT meet the target critera will be changed
 - Samples are only converted to SMALLER target bit-depth (-b) or channels (-c)
   - ...unless a minimum bit-depth is specified (-B, disabled by default)
 - Stereo samples can be conditionally converted to mono using auto-mono (-a)
@@ -134,7 +134,7 @@ Originally created to reduce the stress of streaming multiple simultaneous
 
 -n
    Dry run
-   Log any actions that would be taken, but don't actually do anything
+   Log any actions that would be taken, but dont actually do anything
 
 -v
    Increase verbosity (stacks)
