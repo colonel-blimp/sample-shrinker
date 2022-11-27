@@ -255,6 +255,32 @@ prep_bitdepth_convert()
 }
 
 
+# Determine what do to about sample rate
+# - updates $change_summary with a text summary
+# - updates $*_args with sox args
+prep_samplerate_convert()
+{
+  # Prepare samplerate conversion
+  if [[ $samplerate -ne $target_samplerate ]]; then
+    change_summary="${samplerate}       "
+    if [[ $samplerate -gt $target_samplerate ]]; then
+      change_summary=$change_summary"${samplerate}->${target_samplerate}"
+      dst_args+=(--rate="$target_samplerate")
+
+    # Raise below-minimum samplerate samples to minimum samplerate (default: 44100)
+    elif (( samplerate < target_samplerate && samplerate < 44100 )); then
+      if [[ -n $minimum_samplerate ]]; then
+        dst_args+=(--rate="$minimum_samplerate")
+
+        change_summary=$change_summary"${samplerate}->$minimum_samplerate+M"
+      fi
+    fi
+  else
+    change_summary=$change_summary"${samplerate}      "
+  fi
+}
+
+
 prep_mono_convert()
 {
   # Prepare channel conversion
@@ -294,6 +320,7 @@ convert()
 
   local channels="$(soxi -V1 -c "$src")"
   local bitdepth="$(soxi -V1 -b "$src")"
+  local samplerate="$(soxi -V1 -r "$src")"
   local encoding="$(soxi -V1 -e "$src")"
 
   local change_summary=""
@@ -306,6 +333,7 @@ convert()
   # and build up the contents of $change_summary and $*_args
   # They used to live here, but it's already a sprawl
   prep_bitdepth_convert
+  prep_samplerate_convert
   prep_mono_convert
   # ----------------------
 
