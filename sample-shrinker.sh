@@ -425,6 +425,7 @@ select_and_process_files()
 
 target_channels=2
 target_bitdepth=16
+target_samplerate=44100
 dry_run=no
 action=convert
 auto_mono=no
@@ -440,7 +441,7 @@ declare -A log_levels
 log_levels=([0]="FATAL" [1]="ERROR" [2]="WARNING" [3]="INFO" [4]="NOTICE" [5]="DEBUG" [6]="TRACE")
 log_level=2
 
-while getopts 'b:B:c:x:paA:Sd:lo:nvh' opt; do
+while getopts 'b:B:s:c:x:paA:Sd:lo:nvh' opt; do
   case "${opt}" in
     b)
       if [ "$OPTARG" -ne 8 -a "$OPTARG" -ne 16 -a "$OPTARG" -ne 24 ]; then
@@ -455,6 +456,13 @@ while getopts 'b:B:c:x:paA:Sd:lo:nvh' opt; do
         exit 1
       fi
       minimum_bit_depth="${OPTARG}"
+      ;;
+    s)
+      if [ "$OPTARG" -ne 44100 ]; then
+        .error "-s is only 44100 for testing; got invalid value: '$OPTARG'"
+        exit 1
+      fi
+      target_samplerate="${OPTARG}"
       ;;
     c) target_channels="${OPTARG}" ;;
     x) src_extension="${OPTARG}" ;;
