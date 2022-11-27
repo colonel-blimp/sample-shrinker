@@ -262,7 +262,7 @@ prep_samplerate_convert()
 {
   # Prepare samplerate conversion
   if [[ $samplerate -ne $target_samplerate ]]; then
-    change_summary="${samplerate}       "
+    change_summary=$change_summary"${samplerate}       "
     if [[ $samplerate -gt $target_samplerate ]]; then
       change_summary=$change_summary"${samplerate}->${target_samplerate}"
       dst_args+=(--rate="$target_samplerate")
