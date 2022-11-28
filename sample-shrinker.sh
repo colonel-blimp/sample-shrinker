@@ -262,9 +262,9 @@ prep_samplerate_convert()
 {
   # Prepare samplerate conversion
   if [[ $samplerate -ne $target_samplerate ]]; then
-    change_summary=$change_summary"${samplerate}      "
+    change_summary+="${samplerate}      "
     if [[ $samplerate -gt $target_samplerate ]]; then
-      change_summary=$change_summary"${samplerate}->${target_samplerate}"
+      change_summary+="${samplerate}->${target_samplerate}"
       dst_args+=(--rate="$target_samplerate")
 
     # Raise below-minimum samplerate samples to minimum samplerate (default: 11025)
@@ -272,11 +272,11 @@ prep_samplerate_convert()
       if [[ -n $minimum_samplerate ]]; then
         dst_args+=(--rate="$minimum_samplerate")
 
-        change_summary=$change_summary"${samplerate}->$minimum_samplerate+M"
+        change_summary+="${samplerate}->$minimum_samplerate+M"
       fi
     fi
   else
-    change_summary=$change_summary"${samplerate}      "
+    change_summary+="${samplerate}      "
   fi
 }
 
