@@ -35,7 +35,7 @@ Caveats:
 - Samples are CONVERTED IN PLACE
   - The original file is backed up under '$backup_dir/' (change with -d)
   - Backups include spectrogram .pngs for old & new files (disable with -S)
-- Only samples that DONT meet the target critera will be changed
+- Only samples that DO NOT meet the target critera will be changed
 - Samples are only converted to SMALLER target bit-depth (-b) or channels (-c)
   - ...unless a minimum bit-depth is specified (-B, disabled by default)
 - Stereo samples can be conditionally converted to mono using auto-mono (-a)
@@ -90,9 +90,16 @@ Originally created to reduce the stress of streaming multiple simultaneous
     Valid values are '8' and '16'
     Default: ${minimum_bit_depth:-(none)}
 
--s SAMPLERATE
+-r SAMPLERATE
     Sets the samplerate of the output files
+    Valid values are integers
     Default: $target_samplerate
+
+-R MINIMUM_SAMPLERATE
+    Minimum samplerate of files
+    Upsamples only; does not affect audio files at or above this samplerate
+    Valid values are integers
+    Default: ${minimum_samplerate:-(none)}
 
 -c CHANNELS
     Target number of output channels (only decreases)
@@ -138,7 +145,7 @@ Originally created to reduce the stress of streaming multiple simultaneous
 
 -n
    Dry run
-   Log any actions that would be taken, but dont actually do anything
+   Log any actions that would be taken, but do not actually do anything
 
 -v
    Increase verbosity (stacks)
@@ -268,7 +275,7 @@ prep_samplerate_convert()
       dst_args+=(--rate="$target_samplerate")
 
     # Raise below-minimum samplerate samples to minimum samplerate (default: 11025)
-    elif (( samplerate < target_samplerate && samplerate < 11025 )); then
+    elif (( samplerate < target_samplerate && samplerate < ${minimum_samplerate:-11025} )); then
       if [[ -n $minimum_samplerate ]]; then
         dst_args+=(--rate="$minimum_samplerate")
 
