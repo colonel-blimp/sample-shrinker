@@ -35,7 +35,7 @@ Caveats:
 - Samples are CONVERTED IN PLACE
   - The original file is backed up under '$backup_dir/' (change with -d)
   - Backups include spectrogram .pngs for old & new files (disable with -S)
-- Only samples that DON'T meet the target critera will be changed
+- Only samples that DO NOT meet the target critera will be changed
 - Samples are only converted to SMALLER target bit-depth (-b) or channels (-c)
   - ...unless a minimum bit-depth is specified (-B, disabled by default)
 - Stereo samples can be conditionally converted to mono using auto-mono (-a)
@@ -90,6 +90,17 @@ Originally created to reduce the stress of streaming multiple simultaneous
     Valid values are '8' and '16'
     Default: ${minimum_bit_depth:-(none)}
 
+-r SAMPLERATE
+    Sets the samplerate of the output files
+    Valid values are integers
+    Default: $target_samplerate
+
+-R MINIMUM_SAMPLERATE
+    Minimum samplerate of files
+    Upsamples only; does not affect audio files at or above this samplerate
+    Valid values are integers
+    Default: ${minimum_samplerate:-(none)}
+
 -c CHANNELS
     Target number of output channels (only decreases)
     Valid values are: 1 (mono) or 2 (stereo)
@@ -134,7 +145,7 @@ Originally created to reduce the stress of streaming multiple simultaneous
 
 -n
    Dry run
-   Log any actions that would be taken, but don't actually do anything
+   Log any actions that would be taken, but do not actually do anything
 
 -v
    Increase verbosity (stacks)
@@ -251,6 +262,32 @@ prep_bitdepth_convert()
 }
 
 
+# Determine what do to about sample rate
+# - updates $change_summary with a text summary
+# - updates $*_args with sox args
+prep_samplerate_convert()
+{
+  # Prepare samplerate conversion
+  if [[ $samplerate -ne $target_samplerate ]]; then
+    change_summary+="${samplerate}      "
+    if [[ $samplerate -gt $target_samplerate ]]; then
+      change_summary+="${samplerate}->${target_samplerate}"
+      dst_args+=(--rate="$target_samplerate")
+
+    # Raise below-minimum samplerate samples to minimum samplerate (default: 11025)
+    elif (( samplerate < target_samplerate && samplerate < ${minimum_samplerate:-11025} )); then
+      if [[ -n $minimum_samplerate ]]; then
+        dst_args+=(--rate="$minimum_samplerate")
+
+        change_summary+="${samplerate}->$minimum_samplerate+M"
+      fi
+    fi
+  else
+    change_summary+="${samplerate}      "
+  fi
+}
+
+
 prep_mono_convert()
 {
   # Prepare channel conversion
@@ -290,6 +327,7 @@ convert()
 
   local channels="$(soxi -V1 -c "$src")"
   local bitdepth="$(soxi -V1 -b "$src")"
+  local samplerate="$(soxi -V1 -r "$src")"
   local encoding="$(soxi -V1 -e "$src")"
 
   local change_summary=""
@@ -302,6 +340,7 @@ convert()
   # and build up the contents of $change_summary and $*_args
   # They used to live here, but it's already a sprawl
   prep_bitdepth_convert
+  prep_samplerate_convert
   prep_mono_convert
   # ----------------------
 
@@ -320,6 +359,7 @@ convert()
 
   .debug  '[convert] .............................................................'
   .debug  "[convert] bit-depth: $bitdepth  (target: $target_bitdepth)"
+  .debug  "[convert] samplerate: $samplerate  (target: $target_samplerate)"
   .debug  "[convert] channels: $channels   (target: $target_channels)"
 
   # Skip conversion if no changes are required
@@ -425,6 +465,7 @@ select_and_process_files()
 
 target_channels=2
 target_bitdepth=16
+target_samplerate=44100
 dry_run=no
 action=convert
 auto_mono=no
@@ -433,6 +474,7 @@ src_extension=wav
 backup_dir=_backup
 automono_threshold='-95.5'
 minimum_bit_depth=
+minimum_samplerate=
 generate_spectrograms=yes
 log_file="_${script_name%%.*}.log"
 
@@ -440,7 +482,7 @@ declare -A log_levels
 log_levels=([0]="FATAL" [1]="ERROR" [2]="WARNING" [3]="INFO" [4]="NOTICE" [5]="DEBUG" [6]="TRACE")
 log_level=2
 
-while getopts 'b:B:c:x:paA:Sd:lo:nvh' opt; do
+while getopts 'b:B:r:R:c:x:paA:Sd:lo:nvh' opt; do
   case "${opt}" in
     b)
       if [ "$OPTARG" -ne 8 -a "$OPTARG" -ne 16 -a "$OPTARG" -ne 24 ]; then
@@ -455,6 +497,20 @@ while getopts 'b:B:c:x:paA:Sd:lo:nvh' opt; do
         exit 1
       fi
       minimum_bit_depth="${OPTARG}"
+      ;;
+    r)
+      if ! [[ "$OPTARG" =~ ^[0-9]+$ ]]; then
+        .error "-r must be an integer; got invalid value: '$OPTARG'"
+        exit 1
+      fi
+      target_samplerate="${OPTARG}"
+      ;;
+    R)
+      if ! [[ "$OPTARG" =~ ^[0-9]+$ ]]; then
+        .error "-R must be an integer; got invalid value: '$OPTARG'"
+        exit 1
+      fi
+      minimum_samplerate="${OPTARG}"
       ;;
     c) target_channels="${OPTARG}" ;;
     x) src_extension="${OPTARG}" ;;
@@ -492,6 +548,7 @@ shift $((OPTIND-1))
 .debug "src_extension:       ${src_extension}"
 .debug "target_channels:     ${target_channels}"
 .debug "target_bitdepth:     ${target_bitdepth}"
+.debug "target_samplerate:   ${target_samplerate}"
 .debug "auto_mono:           ${auto_mono}"
 .debug "automono_threshold:  ${automono_threshold} dB"
 .debug "pre_normalize:       ${pre_normalize}"
