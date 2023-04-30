@@ -313,6 +313,7 @@ prep_mono_convert()
   else
     ch_stat="mono       "
   fi
+  ch_stat="$(printf "%-10s" "$ch_stat")"
   change_summary="$(one_line_sample_summary "$src" "$change_summary  ${ch_stat}" "$stereo_diff" "$sox_bit_depth")"
 }
 
