@@ -134,6 +134,7 @@ Originally created to reduce the stress of streaming multiple simultaneous
 
 -d BACKUP_DIR
    Directory to stoe backed up original sample files
+   To turn off backups, use '-d -'
    Default: '$backup_dir'
 
 -l
@@ -385,7 +386,7 @@ convert()
   sox_args=("${src_args[@]}" "$src" "${dst_args[@]}" "${tmp_dst:-$dst}" "${post_args[@]}")
 
   local flat_parent_dir="$( cd -- "$(dirname "$src")" >/dev/null 2>&1 ; pwd -P )"
-  local b_src_dir="$backup_dir/${flat_parent_dir#$PWD/}"
+  local b_src_dir="$backup_dir/${flat_parent_dir#"$PWD"/}"
 
   if [[ "$dry_run" == yes ]]; then
     echo "[DRY RUN] $change_summary" |& tee -a "$log_file"
@@ -395,17 +396,19 @@ convert()
     echo "$change_summary" |& tee -a "$log_file"
     .notice "[convert] sox $(printf "%q " "${sox_args[@]}")"
 
-    mkdir -p "$b_src_dir"
+
+    [[ $backup_dir == "-" ]] || mkdir -p "$b_src_dir"
 
     if [[ -n "$tmp_dst" ]]; then
       .notice "[convert] ( using tmp_dst: '$tmp_dst' )"
-      cp "$src" "$b_src_dir/"
+      [[ $backup_dir == "-" ]] ||  cp "$src" "$b_src_dir/"
       sox "${sox_args[@]}" |& tee -a "$log_file" && mv "$tmp_dst" "$dst"
     else
-      sox -V5 "${sox_args[@]}" |& tee -a "$log_file" && mv "$src" "$b_src_dir/"
+      sox -V5 "${sox_args[@]}" |& tee -a "$log_file" && { [[ $backup_dir == "-" ]] || mv "$src" "$b_src_dir/" ; }
     fi
   fi
 
+  [[ $backup_dir == "-" ]] && return
 
 
   local b_src="$(basename "$src")"

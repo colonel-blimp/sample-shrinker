@@ -11,6 +11,7 @@ Conditionally batch-convert audio samples into minimal .wav files
   * [List samples + preview changes, based on the given options](#list-samples--preview-changes-based-on-the-given-options)
   * [Automatically convert stereo to mono when the content is mono](#automatically-convert-stereo-to-mono-when-the-content-is-mono)
   * [Normalize before downsampling bit-depth](#normalize-before-downsampling-bit-depth)
+  * [Convert a directory without creating backups](#convert-a-directory-without-creating-backups)
 * [Setup](#setup)
   * [Requirements](#requirements)
 
@@ -160,13 +161,27 @@ level-balanced collection (like a single hit from a drum kit), normalizing the
 sample would change its relative volume with the rest of the collection.
 
 
+### Convert a directory without creating backups
+
+```console
+bash sample-shrinker.sh -d - .
+```
+
+Specifying `-` as the backup directory will disable backups.  This also
+disables the before/after spectrograph images, because they are generated
+within the backups' directory tree.
+
+
+
 ## Setup
 
 ### Requirements
 
 * Bash
   * Tested with Bash 5.1.16
-  * Requires at least Bash 4.4 to support `${parameter@Q}` substitution
+  * Requires at least Bash 5
+    * **NOTE** Mac/OSX users will need to `homebrew install bash`, because the
+      default terminal bash is stuck at 3.2(!)
 * [SoX][sox]
   * Tested with 14.4.2
   * Requires sox >= 14.3 to support automatic `--no-dither` for 8-bit samples
