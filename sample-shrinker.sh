@@ -323,6 +323,12 @@ convert()
 {
   local src="$1"
 
+  if [[ $src =~ ^\._ ]]; then
+    .warn "[convert] SKIP (filename prefix '._' suggests non-wav metadata):  $src "
+    return 0
+  fi
+
+
   .notice ''
   .notice " $src"
   .notice '-----------------------------------------------------------------------'
@@ -464,7 +470,7 @@ select_and_process_files()
   for input in "${inputs[@]}"; do
     [ -f "$input" ] ||  { .warn "SKIPPING: no such file: '$input'"; continue ; }
     convert "$input"
- done
+  done
 }
 
 target_channels=2
