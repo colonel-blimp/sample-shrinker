@@ -328,7 +328,6 @@ convert()
     return 0
   fi
 
-
   .notice ''
   .notice " $src"
   .notice '-----------------------------------------------------------------------'
@@ -551,20 +550,26 @@ while getopts 'b:B:r:R:c:x:paA:Sd:lo:nvh' opt; do
 done
 shift $((OPTIND-1))
 
+if ! sox |& grep -w spectrogram > /dev/null && [[ $generate_spectrograms != no ]]; then
+  .warn "sox did not report spectrogram support; auto-disabling generating spectrograms"
+  generate_spectrograms=no
+fi
+
 .debug "----------------------------------------------------------------------"
 .debug "                  Settings after parsing CLI options:"
 .debug "----------------------------------------------------------------------"
-.debug "action:              ${action}"
-.debug "src_extension:       ${src_extension}"
-.debug "target_channels:     ${target_channels}"
-.debug "target_bitdepth:     ${target_bitdepth}"
-.debug "target_samplerate:   ${target_samplerate}"
-.debug "auto_mono:           ${auto_mono}"
-.debug "automono_threshold:  ${automono_threshold} dB"
-.debug "pre_normalize:       ${pre_normalize}"
-.debug "backup_dir:          ${backup_dir}"
-.debug "log_level:           ${log_levels[$log_level]} ($log_level)"
-.debug "dry_run:             ${dry_run}"
+.debug "action:                ${action}"
+.debug "src_extension:         ${src_extension}"
+.debug "target_channels:       ${target_channels}"
+.debug "target_bitdepth:       ${target_bitdepth}"
+.debug "target_samplerate:     ${target_samplerate}"
+.debug "auto_mono:             ${auto_mono}"
+.debug "automono_threshold:    ${automono_threshold} dB"
+.debug "pre_normalize:         ${pre_normalize}"
+.debug "backup_dir:            ${backup_dir}"
+.debug "generate_spectrograms: ${generate_spectrograms}"
+.debug "log_level:             ${log_levels[$log_level]} ($log_level)"
+.debug "dry_run:               ${dry_run}"
 .debug "----------------------------------------------------------------------"
 
 
