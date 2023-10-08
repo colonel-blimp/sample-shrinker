@@ -457,7 +457,7 @@ select_and_process_files()
     while IFS= read -r -d $'\0' input; do
       .debug "  INPUT: $input"
       inputs+=("$input")
-    done < <(find "$src" -type f -iname "*.${src_extension}" -print0 )
+    done < <(find "$src" -type f -iname "*.${src_extension}" ! -path "*/$backup_dir/*" ! -path "./$backup_dir/*" -print0 )
   elif [ -f "$src" ]; then
     inputs+=("$src")
   else
