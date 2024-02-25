@@ -25,10 +25,10 @@ small `.wav` files, based on target criteria.  This is useful to save storage
 space and reduce the I/O stress during simultaneous real-time streaming
 of multiple `.wav` files on devices like the [Dirtywave M8 tracker][m8].
 
-If you have directories full of 24/32-bit stereo `.wav` files, or stereo
+If you have directories full of 24/32-bit stereo `.wav` files or stereo
 samples with effectively mono content, this script can reclaim wasted storage
 space and reduce I/O stress on your SD card.  It can even detect if the content
-of a stereo sample is actually mono & convert it for you.
+of a stereo sample is actually mono & convert it for you!
 
 ## Usage
 
@@ -167,9 +167,9 @@ sample would change its relative volume with the rest of the collection.
 bash sample-shrinker.sh -d - .
 ```
 
-Specifying `-` as the backup directory will disable backups.  This also
-disables the before/after spectrograph images, because they are generated
-within the backups' directory tree.
+Specifying `-` as the backup directory will disable backups.  As a side effect,
+This also disables the before/after spectrograph images (because they are saved
+under the backups' directory tree).
 
 
 

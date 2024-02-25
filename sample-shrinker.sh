@@ -550,9 +550,9 @@ while getopts 'b:B:r:R:c:x:paA:Sd:lo:nvh' opt; do
 done
 shift $((OPTIND-1))
 
-if ! sox |& grep -w spectrogram > /dev/null && [[ $generate_spectrograms != no ]]; then
-  .warn "sox did not report spectrogram support; auto-disabling generating spectrograms"
-  generate_spectrograms=no
+if [[ $generate_spectrograms != no ]] && ! [[ "$(sox 2>&1 || : )" =~ spectrogram ]]; then
+    .warn "sox did not report spectrogram support; auto-disabling generating spectrograms"
+    generate_spectrograms=no
 fi
 
 .debug "----------------------------------------------------------------------"
